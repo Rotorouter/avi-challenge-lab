@@ -1,0 +1,51 @@
+# Non-sensitive settings to provision an Avi virtual service.
+---
+avi_api_version: "20.1.8"
+aws_domain: "vmware.com"
+controller: "controller1"
+domain: "domain.com"
+hostname: "my-website"
+letsencrypt_cert: false
+pool:
+  default_server_port: 80
+  lb_algorithm: "LB_ALGORITHM_LEAST_CONNECTIONS"
+  lb_algorithm_hash: "LB_ALGORITHM_CONSISTENT_HASH_SOURCE_IP_ADDRESS"
+  servers:
+    - hostname: "webserver1"
+      ip:
+        addr: "10.0.255.109"
+        type: "V4"
+      enabled: true
+      network: "subnet-east1-1a-1"
+    - hostname: "WEB02"
+      ip:
+        addr: "10.0.254.23"
+        type: "V4"
+      enabled: true
+      network: "subnet-east1-1b-1"
+  inline_health_monitor: true
+  use_service_port: false
+  fail_action:
+    type: "FAIL_ACTION_CLOSE_CONN"
+  lookup_server_by_name: false
+  analytics_policy:
+    enable_realtime_metrics: true
+  min_health_monitors_up: 1
+  health_monitors:
+    - "System-HTTP"
+vip_network: "my-vip-subnet-1"
+virtual_server:
+  analytics_profile: "System-Analytics-Profile"
+  application_profile: "http-to-https-redirect-profile"
+  enable_autogw: true
+  remove_listening_port_on_vs_down: true
+  services:
+    - enable_http2: false
+      enable_ssl: true
+      port: 443
+      port_range_end: 443
+    - enable_http2: false
+      enable_ssl: true
+      port: 80
+      port_range_end: 80
+  traffic_enabled: true

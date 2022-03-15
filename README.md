@@ -27,7 +27,7 @@ This is a lightweight demo project project which will:
     - Select the region where the controller ec2 instances are deployed. Enter the `Access Key ID` the `Secret Access Key` provided. Under Register `Virtual Service Names` select the check box for `Amazon Route 53`. Click `Next`.
     - Under `VPC` select the VPC where the controller is installed. Select the appropriate availability zones, and subnets in which to install the SE management ENIs. Click `Complete`.
 - Copy `.env-example` to `.env` and edit `.env` to include the keys, tokens, etc. needed.
-- Edit `avi_challenge_lab/vs.yml` to contain other details for the Virtual Service to provision.
+- Copy `avi_challenge_lab/vs.yml-example` to `avi_challenge_lab/vs.yml` and edit it to contain other details for the Virtual Service to provision.
 - Generate an API token through the UI to use during the session.
 
 #### Automated Steps
@@ -51,9 +51,7 @@ Steps for improvement, to make the demo production-worthy.
     - Configure clustering among the 3 controller ec2 instances. The 2nd and 3rd controllers will be the followers. Verify that the cluster comes up and that the followers pick up settings like the cloud which would not otherwise be present if clustering were not working. Demonstrate this to the customer via the UI, but also have tests in the container to verify.
     - Disable the default `admin` account and add a local-admin account with a username and password supplied by the user.
     - Probably other stuff I can't think of right now. :P
-- AWS Networks where the servers live are currently hard-coded. Add a function to look up the networks by name from the `vs.yml` config file.
-- Health monitor UUID is currently hardcoded in the pool settings. Add a function to look it up via a name provided in `vs.yml`.
-- Add functions to look up the UUIDs of various hard-coded objects in the VS settings.
+- The public subnet UUID is currently in the `vs.yml` settings rather than the friendly name. There seems to be an issue with the API in Avi 20.1.8 which does not return the `network` objects to a GET unless a UUID is specified (so it cannot be looked up by name). Once this is fixed, add a line to `create_vsvip()` in `cli.py` to lookup the `network` by friendly name instead of requiring the user to supply a UUID.
 - Add a 3rd set of playbooks and a container to spin up lightweight web server ec2 instances in each AZ where the SEs live.
     - If you use an AMI image for a modern Debian-based linux then `busybox` should already be installed.
     - Allocate a new SSH keypair during the run and use that for the server instances.

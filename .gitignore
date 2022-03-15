@@ -302,6 +302,7 @@ development/*.txt
 # Invoke overrides
 invoke.yml
 
-# Avi controller SSH private Key
+# Avi controller config
 fse-interview-keypair-mfoxworth.pem
 avi_challenge_lab/cloudflare.ini
+avi_challenge_lab/vs.yml
