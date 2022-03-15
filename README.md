@@ -20,7 +20,7 @@ This is a lightweight demo project project which will:
 
 ## Deployment Procedures
 #### Manual Steps
-- Deploy a 3-node Avi Controller cluster, with reachability to the Internet and credentials. See https://avinetworks.com/docs/latest/installing-avi-vantage-in-amazon-web-services/ for instructions. Controllers should be deployed from the AWS Marketplace using version `20.1.8-9194`. Each controller instance should have an elastic IP allocated.
+- Deploy an Avi controller or controller cluster, with reachability to the Internet and credentials. See https://avinetworks.com/docs/latest/installing-avi-vantage-in-amazon-web-services/ for instructions. Controllers should be deployed from the AWS Marketplace using version `20.1.8-9194`. Each controller instance should have an elastic IP allocated.
 - Configure the lead controller for an AWS cloud: 
     - From the web UI go to `Infrastructure >> Clouds`.
     - Create a new cloud, of type AWS.
