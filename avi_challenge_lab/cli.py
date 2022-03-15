@@ -151,11 +151,11 @@ def get_dependent_object_urls(avi_api: dict, cloudflare_email: str, cloudflare_t
             vs_config=vs_config, cloudflare_email=cloudflare_email, cloudflare_token=cloudflare_token
         )
         ssl_cert_and_key_url = create_cert_and_key(avi_api=avi_api, ssl_content=ssl_content, vs_config=vs_config)
-        vs_config["virtual_server"]["ssl_key_and_certificate_refs"] = ssl_cert_and_key_url
+        vs_config["virtual_server"]["ssl_key_and_certificate_refs"] = [ssl_cert_and_key_url]
     else:
-        vs_config["virtual_server"]["ssl_key_and_certificate_refs"] = avi_api.get_object_by_name(
-            "sslkeyandcertificate", "System-Default-Cert-EC"
-        )["url"]
+        vs_config["virtual_server"]["ssl_key_and_certificate_refs"] = [
+            avi_api.get_object_by_name("sslkeyandcertificate", "System-Default-Cert-EC")["url"]
+        ]
 
     return vs_config
 
@@ -181,7 +181,7 @@ def create_pool(avi_api: dict, vs_config: dict) -> str:
 
 
 def create_letsencrypt_cert(vs_config: dict, cloudflare_email: str, cloudflare_token: str) -> List:
-    """Provision a Let's Encrypt SSL certificate, using the Cloudflare DNS-challenge pattern.
+    """Provision a Lets Encrypt SSL certificate, using the Cloudflare DNS-challenge pattern.
 
     Args:
         vs_config (dict): Contents of the VS config file, to include the hostname and domain of the VS entry.
@@ -192,21 +192,22 @@ def create_letsencrypt_cert(vs_config: dict, cloudflare_email: str, cloudflare_t
         list: A list containing the chained certificate at [0] and the key contents at [1]
     """
     # Insert the correct token into the cloudflare.ini
-    copyfile("template_cloudflare.ini", "cloudflare.ini")
-    with open("cloudflare.ini", "w", encoding="utf-8") as cloudflare_ini_file:
-        for line in cloudflare_ini_file:
-            line.write(line.replace("CLOUDFLARE_TOKEN", cloudflare_token))
-        cloudflare_ini_file.close()
+    with open("template_cloudflare.ini", "rt", encoding="utf-8") as cloudflare_ini_file_template:
+        with open("cloudflare.ini", "wt", encoding="utf-8") as cloudflare_ini_file:
+            for line in cloudflare_ini_file_template:
+                cloudflare_ini_file.write(line.replace("CLOUDFLARE_TOKEN", cloudflare_token))
+            cloudflare_ini_file.close()
+            cloudflare_ini_file_template.close()
 
     # TODO: This calls shell commands. Rewrite it using the `certbot` ACME library to keep everything in Python.
     cli_command = f"certbot certonly -n --dns-cloudflare --dns-cloudflare-credentials cloudflare.ini --agree-tos --email {cloudflare_email} -d {vs_config['fqdn']}"
     os.system(cli_command)
 
     # Read in the cert and key contents
-    with open(f"/etc/letsencrypt/live/{vs_config['fqdn']}/fullchain.pem", "r", encoding="utf-8") as cert_file:
+    with open(f"/etc/letsencrypt/live/{vs_config['fqdn']}/fullchain.pem", "rt", encoding="utf-8") as cert_file:
         cert_content = cert_file.read()
         cert_file.close()
-    with open(f"/etc/letsencrypt/live/{vs_config['fqdn']}/privkey.pem", "r", encoding="utf-8") as key_file:
+    with open(f"/etc/letsencrypt/live/{vs_config['fqdn']}/privkey.pem", "rt", encoding="utf-8") as key_file:
         key_content = key_file.read()
         key_file.close()
 
@@ -232,16 +233,17 @@ def create_cert_and_key(avi_api: dict, ssl_content: list, vs_config: dict) -> st
     server_cert = f"{server_cert_text}-----END CERTIFICATE-----\n"
     data = {
         "name": f"{vs_config['fqdn']}-sslkeyandcertificate",
-        "certificate": server_cert,
+        "certificate": {
+            "certificate": server_cert,
+        },
+        "key": ssl_content[1],
         "certificate_base64": False,
         "enable_ocsp_stapling": False,
         "format": "SSL_PEM",
-        "key": ssl_content[1],
         "key_base64": False,
         "type": "SSL_CERTIFICATE_TYPE_VIRTUALSERVICE",
     }
 
-    # FIXME: This returns 500 errors (unhandled exception).
     sslkeyandcertificate_object = avi_api.post("sslkeyandcertificate", data=data, api_version=avi_api_version)
     sslkeyandcertificate_url = sslkeyandcertificate_object.json()["url"]
 
