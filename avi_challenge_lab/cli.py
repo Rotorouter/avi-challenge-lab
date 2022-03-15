@@ -105,42 +105,79 @@ def parse_args(input_args) -> argparse.Namespace:
     return parser.parse_args(input_args)
 
 
-def create_cloudflare_cname(
-    vs_config: dict, cfapi: str, cloudflare_email: str, cloudflare_token: str, cloudflare_zone_id: str
-) -> Dict:
-    """Create a CNAME record in Cloudflare, which will point traffic for our site to the Route 53 name of an Avi VS.
+def get_dependent_object_urls(avi_api: dict, cloudflare_email: str, cloudflare_token: str, vs_config: dict) -> Dict:
+    """Add a url key to each type of object which will be referenced by the pool or VS
 
     Args:
-        vs_config (dict): Contents of the VS config file, to include the hostname and domain of the VS entry.
-        cfapi (str): Base URL for the Cloudflare API.
-        cloudflare_email (str): Email address associated with the Cloudflare account.
-        cloudflare_token (str): API token with `Zone:DNS:Edit` permissions to the given zone.
-        cloudflare_zone_id (str): Numeric zone ID.
+        avi_api (dict): API session object describing the connection to the controller.
+        vs_config (dict): Configuration settings
 
     Returns:
-        str: HTTP response code.
+        Dict: vs_config enriched with "url" keys for each object
     """
-    url = f"{cfapi}/{cloudflare_zone_id}/dns_records"
-    headers = {
-        "X-Auth-Email": cloudflare_email,
-        "Authorization": f"Bearer {cloudflare_token}",
-        "Content-type": "application/json",
-    }
-    content = f"{vs_config['hostname']}.{vs_config['aws_domain']}"
-    if vs_config["letsencrypt_cert"]:
-        proxied = False
-    else:
-        proxied = True
-    data = {
-        "type": "CNAME",
-        "name": vs_config["fqdn"],
-        "content": content,
-        "ttl": 1,
-        "proxied": proxied,
-    }
-    response = requests.post(url, headers=headers, json=data)
 
-    return response.json()["result"]
+    # Add an FQDN key for the VS for ease of use
+    vs_config["fqdn"] = f"{vs_config['hostname']}.{vs_config['domain']}"
+
+    # Replace the "network" key with "nw_ref" for each of the pool members.
+    for server in vs_config["pool"]["servers"]:
+        server["nw_ref"] = avi_api.get_object_by_name("vimgrnwruntime", server["network"])["url"]
+        server.pop("network", None)
+
+    # Replace the friendly names of the health monitors with their URL ref.
+    vs_config["pool"]["health_monitor_refs"] = []
+    for monitor in vs_config["pool"]["health_monitors"]:
+        monitor_ref = avi_api.get_object_by_name("healthmonitor", monitor)["url"]
+        vs_config["pool"]["health_monitor_refs"].append(monitor_ref)
+    vs_config["pool"].pop("health_monitors", None)
+
+    # Replace the friendly name of the analytics profile with its url_ref
+    vs_config["virtual_server"]["analytics_profile_ref"] = avi_api.get_object_by_name(
+        "analyticsprofile", vs_config["virtual_server"]["analytics_profile"]
+    )["url"]
+    vs_config["virtual_server"].pop("analytics_profile", None)
+
+    # Replace the friendly name of the application profile with its url_ref
+    vs_config["virtual_server"]["application_profile_ref"] = avi_api.get_object_by_name(
+        "applicationprofile", vs_config["virtual_server"]["application_profile"]
+    )["url"]
+    vs_config["virtual_server"].pop("application_profile", None)
+
+    # Get the URL for the System-Standard SSL Profile.
+    vs_config["virtual_server"]["ssl_profile_ref"] = avi_api.get_object_by_name("sslprofile", "System-Standard")["url"]
+
+    if vs_config["letsencrypt_cert"]:
+        ssl_content = create_letsencrypt_cert(
+            vs_config=vs_config, cloudflare_email=cloudflare_email, cloudflare_token=cloudflare_token
+        )
+        ssl_cert_and_key_url = create_cert_and_key(avi_api=avi_api, ssl_content=ssl_content, vs_config=vs_config)
+        vs_config["virtual_server"]["ssl_key_and_certificate_refs"] = ssl_cert_and_key_url
+    else:
+        vs_config["virtual_server"]["ssl_key_and_certificate_refs"] = avi_api.get_object_by_name(
+            "sslkeyandcertificate", "System-Default-Cert-EC"
+        )["url"]
+
+    return vs_config
+
+
+def create_pool(avi_api: dict, vs_config: dict) -> str:
+    """Make a pool object, containing the settings from the config file.
+
+    Args:
+        avi_api (dict): API session object describing the connection to the controller.
+        vs_config (dict): Configuration settings
+
+    Returns:
+        str: Reference URL of the pool created
+    """
+    avi_api_version = vs_config["avi_api_version"]
+    pool_config = vs_config["pool"]
+    pool_config["name"] = f"{vs_config['fqdn']}-pool"
+
+    pool_object = avi_api.post("pool", data=pool_config, api_version=avi_api_version)
+    pool_url = pool_object.json()["url"]
+
+    return pool_url
 
 
 def create_letsencrypt_cert(vs_config: dict, cloudflare_email: str, cloudflare_token: str) -> List:
@@ -211,81 +248,6 @@ def create_cert_and_key(avi_api: dict, ssl_content: list, vs_config: dict) -> st
     return sslkeyandcertificate_url
 
 
-def create_pool(avi_api: dict, vs_config: dict) -> str:
-    """Make a pool object, containing the settings from the config file.
-
-    Args:
-        avi_api (dict): API session object describing the connection to the controller.
-        vs_config (dict): Configuration settings
-
-    Returns:
-        str: Reference URL of the pool created
-    """
-    avi_api_version = vs_config["avi_api_version"]
-    pool_config = vs_config["pool"]
-    pool_config["name"] = f"{vs_config['fqdn']}-pool"
-
-    pool_object = avi_api.post("pool", data=pool_config, api_version=avi_api_version)
-    pool_url = pool_object.json()["url"]
-
-    return pool_url
-
-
-def get_dependent_object_urls(avi_api: dict, cloudflare_email: str, cloudflare_token: str, vs_config: dict) -> Dict:
-    """Add a url key to each type of object which will be referenced by the pool or VS
-
-    Args:
-        avi_api (dict): API session object describing the connection to the controller.
-        vs_config (dict): Configuration settings
-
-    Returns:
-        Dict: vs_config enriched with "url" keys for each object
-    """
-
-    # Add an FQDN key for the VS for ease of use
-    vs_config["fqdn"] = f"{vs_config['hostname']}.{vs_config['domain']}"
-
-    # Replace the "network" key with "nw_ref" for each of the pool members.
-    for server in vs_config["pool"]["servers"]:
-        server["nw_ref"] = avi_api.get_object_by_name("vimgrnwruntime", server["network"])["url"]
-        server.pop("network", None)
-
-    # Replace the friendly names of the health monitors with their URL ref.
-    vs_config["pool"]["health_monitor_refs"] = []
-    for monitor in vs_config["pool"]["health_monitors"]:
-        monitor_ref = avi_api.get_object_by_name("healthmonitor", monitor)["url"]
-        vs_config["pool"]["health_monitor_refs"].append(monitor_ref)
-    vs_config["pool"].pop("health_monitors", None)
-
-    # Replace the friendly name of the analytics profile with its url_ref
-    vs_config["virtual_server"]["analytics_profile_ref"] = avi_api.get_object_by_name(
-        "analyticsprofile", vs_config["virtual_server"]["analytics_profile"]
-    )["url"]
-    vs_config["virtual_server"].pop("analytics_profile", None)
-
-    # Replace the friendly name of the application profile with its url_ref
-    vs_config["virtual_server"]["application_profile_ref"] = avi_api.get_object_by_name(
-        "applicationprofile", vs_config["virtual_server"]["application_profile"]
-    )["url"]
-    vs_config["virtual_server"].pop("application_profile", None)
-
-    # Get the URL for the System-Standard SSL Profile.
-    vs_config["virtual_server"]["ssl_profile_ref"] = avi_api.get_object_by_name("sslprofile", "System-Standard")["url"]
-
-    if vs_config["letsencrypt_cert"]:
-        ssl_content = create_letsencrypt_cert(
-            vs_config=vs_config, cloudflare_email=cloudflare_email, cloudflare_token=cloudflare_token
-        )
-        ssl_cert_and_key_url = create_cert_and_key(avi_api=avi_api, ssl_content=ssl_content, vs_config=vs_config)
-        vs_config["virtual_server"]["ssl_key_and_certificate_refs"] = ssl_cert_and_key_url
-    else:
-        vs_config["virtual_server"]["ssl_key_and_certificate_refs"] = avi_api.get_object_by_name(
-            "sslkeyandcertificate", "System-Default-Cert-EC"
-        )["url"]
-
-    return vs_config
-
-
 def create_vsvip(avi_api: dict, vs_config: dict) -> str:
     """Create a VIP object for the Virtual Service
 
@@ -297,6 +259,7 @@ def create_vsvip(avi_api: dict, vs_config: dict) -> str:
         str: URL for the vsvip object
     """
     avi_api_version = vs_config["avi_api_version"]
+    subnet_uuid = avi_api.get_object_by_name("vimgrnwruntime", vs_config["vip_network"])["uuid"]
     data = {
         "name": f"{vs_config['fqdn']}-vsvip",
         "vip": [
@@ -306,7 +269,7 @@ def create_vsvip(avi_api: dict, vs_config: dict) -> str:
                 "auto_allocate_ip": True,
                 "auto_allocate_ip_type": "V4_ONLY",
                 "auto_allocate_floating_ip": True,
-                "subnet_uuid": vs_config["vip_network"],
+                "subnet_uuid": subnet_uuid,
             }
         ],
         "dns_info": [
@@ -340,10 +303,47 @@ def create_vs(avi_api: dict, pool_url: str, vs_config: dict) -> Dict:
     virtual_server_config["vsvip_ref"] = create_vsvip(avi_api=avi_api, vs_config=vs_config)
 
     virtual_server_object = avi_api.post("virtualservice", data=virtual_server_config, api_version=avi_api_version)
-    virtual_server_response_code = virtual_server_object.status_code
 
-    print(f"Response code from VS creation is {virtual_server_response_code}. It worked!")
-    return virtual_server_response_code
+    print(f"Response code from VS creation is {virtual_server_object.status_code}.")
+    return virtual_server_object.status_code
+
+
+def create_cloudflare_cname(
+    vs_config: dict, cfapi: str, cloudflare_email: str, cloudflare_token: str, cloudflare_zone_id: str
+) -> Dict:
+    """Create a CNAME record in Cloudflare, which will point traffic for our site to the Route 53 name of an Avi VS.
+
+    Args:
+        vs_config (dict): Contents of the VS config file, to include the hostname and domain of the VS entry.
+        cfapi (str): Base URL for the Cloudflare API.
+        cloudflare_email (str): Email address associated with the Cloudflare account.
+        cloudflare_token (str): API token with `Zone:DNS:Edit` permissions to the given zone.
+        cloudflare_zone_id (str): Numeric zone ID.
+
+    Returns:
+        str: HTTP response code.
+    """
+    url = f"{cfapi}/{cloudflare_zone_id}/dns_records"
+    headers = {
+        "X-Auth-Email": cloudflare_email,
+        "Authorization": f"Bearer {cloudflare_token}",
+        "Content-type": "application/json",
+    }
+    content = f"{vs_config['hostname']}.{vs_config['aws_domain']}"
+    if vs_config["letsencrypt_cert"]:
+        proxied = False
+    else:
+        proxied = True
+    data = {
+        "type": "CNAME",
+        "name": vs_config["fqdn"],
+        "content": content,
+        "ttl": 1,
+        "proxied": proxied,
+    }
+    response = requests.post(url, headers=headers, json=data)
+
+    return response.json()["result"]
 
 
 def main(args=parse_args(sys.argv[1:])) -> None:
