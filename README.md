@@ -28,7 +28,6 @@ This is a lightweight demo project project which will:
     - Under `VPC` select the VPC where the controller is installed. Select the appropriate availability zones, and subnets in which to install the SE management ENIs. Click `Complete`.
 - Copy `.env-example` to `.env` and edit `.env` to include the keys, tokens, etc. needed.
 - Copy `avi_challenge_lab/vs.yml-example` to `avi_challenge_lab/vs.yml` and edit it to contain other details for the Virtual Service to provision.
-- Generate an API token through the UI to use during the session.
 
 #### Automated Steps
 - Build the container with `docker-compose build cli`.
