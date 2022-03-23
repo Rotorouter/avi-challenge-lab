@@ -19,15 +19,20 @@ This is a lightweight demo project project which will:
 - Permissions and credentials to register DNS records in Cloudflare for the given domain.
 
 ## Deployment Procedures
-#### Manual Steps
+#### Manual Steps in AWS
 - Deploy an Avi controller or controller cluster, with reachability to the Internet and credentials. See https://avinetworks.com/docs/latest/installing-avi-vantage-in-amazon-web-services/ for instructions. Controllers should be deployed from the AWS Marketplace using version `20.1.8-9194`. Each controller instance should have an elastic IP allocated.
+- *Note* There is a *Launch Template* for EC2 which is available to build the controller on a public subnet. Replace the ssh keypair on the template before launch if desired.
 - Configure the lead controller for an AWS cloud: 
     - From the web UI go to `Infrastructure >> Clouds`.
     - Create a new cloud, of type AWS.
     - Select the region where the controller ec2 instances are deployed. Enter the `Access Key ID` the `Secret Access Key` provided. Under Register `Virtual Service Names` select the check box for `Amazon Route 53`. Click `Next`.
     - Under `VPC` select the VPC where the controller is installed. Select the appropriate availability zones, and subnets in which to install the SE management ENIs. Click `Complete`.
+
+#### Setup Development Environment
 - Copy `.env-example` to `.env` and edit `.env` to include the keys, tokens, etc. needed.
 - Copy `avi_challenge_lab/vs.yml-example` to `avi_challenge_lab/vs.yml` and edit it to contain other details for the Virtual Service to provision.
+- Setup your development environment with `poetry install` from the root of your git project directory.
+- Initialize the `poetry` virtual environment with `poetry shell`.
 
 #### Automated Steps
 - Build the container with `docker-compose build cli`.
